@@ -207,7 +207,9 @@ impl fmt::Debug for Write {
     }
 }
 
-/// Expiring continuation bound to the exact scope and index, not a snapshot.
+/// Internal expiring continuation bound to the exact scope and index, not a
+/// snapshot or public token. Never expose its serde representation to clients;
+/// the API owner supplies an opaque requester/query-bound cursor.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Cursor {

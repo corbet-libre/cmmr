@@ -8,7 +8,8 @@ opaque bytes; callers must encrypt private content before crossing this boundary
 
 States: Ready (empty or live) → Closed. Mutex poisoning reports Unavailable.
 Entries: Absent → Live(revision, exclusive deadline) → Expired or Deleted.
-A fresh instance is empty. Cloned Arc handles share one state. Close clears it.
+A fresh instance is empty. Cloned Arc handles share one state. Close clears all
+records and secondary maps even after mutex poisoning; the poison remains fenced.
 Clock is injected Unix milliseconds and sampled under the mutex. Regression
 refuses access until it catches up; elapsed deadlines are never extended.
 
@@ -23,7 +24,11 @@ There is deliberately no unbounded historical operation receipt journal.
 Indexes and generation membership are owned by records; they cannot be written
 separately. Delete-generation removes only records still bearing that generation.
 Expiry is checked by every read; maintenance reclaims expired values and indexes
-without evicting valid entries. An ordered expiry queue makes repeated capacity
+without evicting valid entries. The embedding service must schedule maintenance
+at a bounded interval even while there are no requests, or close/drop the store.
+For Forum, the configured presence heartbeat interval (initially 30 seconds)
+also bounds this maintenance interval; a scheduler failure fences admission until
+cleanup catches up. Memory installs no runtime or background task itself. An ordered expiry queue makes repeated capacity
 refusals cheap. Rejected batches preserve all live values and indexes.
 
 Pages are ordered by (deadline, key) with a configured maximum size. A continuation

@@ -214,12 +214,15 @@ impl<C: Clock> Store for Memory<C> {
         self.operate(|data, now| Ok(data.prune(now)))
     }
     fn close(&self) {
-        if let Ok(mut data) = self.data.lock() {
-            *data = Data {
-                closed: true,
-                ..Data::default()
-            };
-        }
+        // Poisoning fences use, but must not prevent explicit erasure.
+        let mut data = self
+            .data
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *data = Data {
+            closed: true,
+            ..Data::default()
+        };
     }
 }
 
