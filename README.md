@@ -17,3 +17,9 @@ cannot meet the volatile contract and is not copied. No crypto is implemented.
 
 CI runs native tests and the same storage vectors in WebAssembly. Enable the
 `conformance` feature only for adapter acceptance. No registry publication.
+
+## Continuous verification
+
+Dependency updates follow main and are tested against one CI-resolved lockfile.
+Line and branch coverage target 100%; failures remain blocking. See
+[the coverage contract](docs/COVERAGE.md) for measurement and exclusions.
