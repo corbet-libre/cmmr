@@ -18,6 +18,10 @@ cannot meet the volatile contract and is not copied. No crypto is implemented.
 CI runs native tests and the same storage vectors in WebAssembly. Enable the
 `conformance` feature only for adapter acceptance. No registry publication.
 
+## Scope
+
+Own the bounded process-local volatile Store, shared record/deadline/CAS/index/generation contract and adapter conformance vectors. No authentication, member policy, persistent storage, request logging or background I/O.
+
 ## Continuous verification
 
 Dependency updates follow main and are tested against one CI-resolved lockfile.

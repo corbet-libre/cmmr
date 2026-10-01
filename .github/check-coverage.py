@@ -1,35 +1,42 @@
 #!/usr/bin/env python3
-"""Gate exact LLVM line and branch counts, without rounded percentages."""
+"""Require every emitted production source line and branch in LLVM LCOV."""
 import json
 import sys
 from pathlib import Path
 
+root = Path.cwd().resolve()
 
-def check(report):
-    if report.get('type') != 'llvm.coverage.json.export' or not report.get('data'):
-        raise ValueError('Expected a nonempty LLVM coverage export')
-    failures = []
-    lines = 0
-    for unit in report['data']:
-        totals = unit['totals']
-        for metric in ('lines', 'branches'):
-            value = totals[metric]
-            count, covered = value['count'], value['covered']
-            if not isinstance(count, int) or not isinstance(covered, int) or not 0 <= covered <= count:
-                raise ValueError(f'Invalid {metric} counts')
-            if metric == 'lines':
-                lines += count
-            print(f'{metric}: {covered}/{count}')
-            if covered != count:
-                failures.append(f'{metric}: {count - covered} uncovered')
-    if lines == 0:
-        raise ValueError('Empty line coverage cannot pass')
-    if failures:
-        raise ValueError('; '.join(failures))
+lines = {}
+branches = {}
+source = None
+for row in Path(sys.argv[1]).read_text().splitlines():
+    if row.startswith('SF:'):
+        source = str(Path(row[3:]).resolve().relative_to(root))
+        if not source.startswith('src/'):
+            raise SystemExit('Unexpected production source in coverage report')
+    elif row.startswith('DA:'):
+        number, count, *_ = row[3:].split(',')
+        key = (source, int(number))
+        if source is None or key in lines or int(count) < 0:
+            raise SystemExit('Invalid or duplicate line coverage record')
+        lines[key] = int(count)
+    elif row.startswith('BRDA:'):
+        number, block, branch, count = row[5:].split(',')
+        key = (source, int(number), block, branch)
+        if source is None or key in branches or (count != '-' and int(count) < 0):
+            raise SystemExit('Invalid or duplicate branch coverage record')
+        branches[key] = 0 if count == '-' else int(count)
+    elif row == 'end_of_record':
+        source = None
 
-
-if __name__ == '__main__':
-    try:
-        check(json.loads(Path(sys.argv[1]).read_text()))
-    except (ValueError, KeyError, TypeError) as error:
-        sys.exit(f'Coverage gate: {error}')
+if not lines or not branches:
+    raise SystemExit('Missing measured production line or branch coverage')
+measured = lines
+missing_lines = [key for key, count in measured.items() if count == 0]
+missing_branches = [key for key, count in branches.items() if count == 0]
+print(f'lines: {len(measured) - len(missing_lines)}/{len(measured)}')
+print(f'branches: {len(branches) - len(missing_branches)}/{len(branches)}')
+if missing_lines or missing_branches:
+    print('Uncovered source lines:', missing_lines)
+    print('Uncovered source branches:', missing_branches)
+    raise SystemExit('Require 100% emitted production source lines and branches')

@@ -19,18 +19,21 @@ impl Data {
             let position = record.position();
             self.expiries.remove(&position);
             for index in &record.indexes {
-                if let Some(entries) = self.indexes.get_mut(index) {
-                    entries.remove(&position);
-                    if entries.is_empty() {
-                        self.indexes.remove(index);
-                    }
+                // All three secondary maps are written with the record while
+                // holding this mutex. A committed record always owns its rows.
+                let entries = self.indexes.get_mut(index).expect("committed index row");
+                entries.remove(&position);
+                if entries.is_empty() {
+                    self.indexes.remove(index);
                 }
             }
-            if let Some(entries) = self.generations.get_mut(&record.generation) {
-                entries.remove(key);
-                if entries.is_empty() {
-                    self.generations.remove(&record.generation);
-                }
+            let entries = self
+                .generations
+                .get_mut(&record.generation)
+                .expect("committed generation row");
+            entries.remove(key);
+            if entries.is_empty() {
+                self.generations.remove(&record.generation);
             }
         }
     }
@@ -178,7 +181,9 @@ impl<C: Clock> Store for Memory<C> {
                 cursor.check(&self.scope, index, now, self.limits)?;
                 cursor.deadline()
             } else {
-                Deadline::new(now.checked_add(self.limits.ttl_ms).ok_or(Error::Invalid)?)?
+                // observe bounds now by MAX_TIME; validated TTL is at most one
+                // year. Their sum fits u64, and Deadline enforces MAX_TIME.
+                Deadline::new(now + self.limits.ttl_ms)?
             };
             data.prune(now);
             let start = cursor.map_or(String::new(), |c| c.after().to_owned());
@@ -217,3 +222,7 @@ impl<C: Clock> Store for Memory<C> {
         }
     }
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "../tests/internal/poison.rs"]
+mod tests;

@@ -14,6 +14,6 @@ Write comments and documentation in English.
 
 - No workstation Cargo commands. GitHub Actions runs formatting, Clippy and tests.
 - Use real disposable Valkey in CI; tests need no external accounts.
-- Pin first-party Git dependencies to full revisions; one revision per crate.
+- First-party Git dependencies follow branch main; preserve exactly one resolved revision per crate in Cargo.lock.
 - Commit explicit paths in small imperative English steps; no AI attribution.
 - Pull with rebase before every push to main. Never force-push, deploy or publish packages.
