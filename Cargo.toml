@@ -1,0 +1,21 @@
+[package]
+name = "cmmr"
+version = "0.1.0"
+edition = "2024"
+description = "Bounded expiring memory storage and its shared adapter contract"
+license = "LGPL-3.0-only WITH LGPL-3.0-linking-exception"
+repository = "https://github.com/corbet-foss/cmmr"
+publish = false
+
+[features]
+conformance = []
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+futures = "0.3"
+wasm-bindgen-test = "0.3"
+
+[lints.rust]
+unsafe_code = "forbid"
