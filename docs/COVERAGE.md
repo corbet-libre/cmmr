@@ -43,3 +43,7 @@ these source locations. CI keeps the original JSON, annotated source and prior
 JSON diagnostic checker. The strict gate checks every emitted DA and BRDA record
 without exclusions; it does not use inconsistent summary LF/LH/BRF/BRH totals or
 claim every instantiation was covered.
+
+The shared policy checker also requires the same raw JSON file inventory,
+complete branch-location inventory and matching upstream summary metadata.
+Truncated, duplicate or malformed LCOV records fail before coverage is counted.

@@ -68,8 +68,7 @@ jobs:
     - run: cargo check --locked --target wasm32-unknown-unknown
     - name: Install matching wasm runner
       shell: bash
-      run: 'version=$(jq -r ''.packages[] | select(.name == "wasm-bindgen") | .version''
-        dependency-metadata.json)
+      run: 'version=$(jq -r ''.packages[] | select(.name == "wasm-bindgen") | .version'' dependency-metadata.json)
 
         archive="wasm-bindgen-${version}-x86_64-unknown-linux-musl.tar.gz"
 
@@ -79,11 +78,9 @@ jobs:
 
         cd "$RUNNER_TEMP/wasm-runner"
 
-        curl -A ''ci-artifact-fetch/1.0'' --fail --location --retry 3 --remote-name
-        "$base/$archive"
+        curl -A ''ci-artifact-fetch/1.0'' --fail --location --retry 3 --remote-name "$base/$archive"
 
-        curl -A ''ci-artifact-fetch/1.0'' --fail --location --retry 3 --remote-name
-        "$base/$archive.sha256sum"
+        curl -A ''ci-artifact-fetch/1.0'' --fail --location --retry 3 --remote-name "$base/$archive.sha256sum"
 
         checksum=$(cut -d '' '' -f1 "$archive.sha256sum")
 
@@ -97,8 +94,8 @@ jobs:
     - name: Execute the identical vectors in wasm
       env:
         CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
-      run: cargo test --locked --target wasm32-unknown-unknown --features conformance
-        --test contract --test validation
+      run: cargo test --locked --target wasm32-unknown-unknown --features conformance --test contract
+        --test validation
     - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0
       with:
         tool: cargo-deny
@@ -148,6 +145,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         prefix-key: coverage
+        cache-on-failure: true
     - uses: taiki-e/install-action@v2
       with:
         tool: cargo-llvm-cov
@@ -155,14 +153,15 @@ jobs:
 
         cargo llvm-cov --version'
     - name: Measure real native round trips and failure paths
-      run: cargo llvm-cov --locked --workspace --all-features --branch --no-cfg-coverage
-        --no-cfg-coverage-nightly --ignore-filename-regex '/tests/' --json --output-path
-        coverage.json
+      run: cargo llvm-cov --locked --workspace --all-features --branch --no-cfg-coverage --no-cfg-coverage-nightly
+        --ignore-filename-regex '/tests/' --json --output-path coverage.json
     - name: Retain source-level diagnostics
-      run: cargo llvm-cov report --locked --branch --ignore-filename-regex '/tests/'
-        --lcov --output-path coverage.lcov
+      run: cargo llvm-cov report --locked --branch --ignore-filename-regex '/tests/' --lcov --output-path
+        coverage.lcov
+    - name: Export companion source line inventory
+      run: cargo llvm-cov report --locked --branch --ignore-filename-regex '/tests/' --text > coverage.txt
     - name: Require complete line and branch coverage
-      run: python3 .github/check-coverage.py coverage.lcov
+      run: python3 .github/check-coverage.py coverage.lcov coverage.json coverage.txt
     - uses: actions/upload-artifact@v4
       if: always()
       with:
@@ -173,7 +172,9 @@ jobs:
 
           resolver.txt
 
-          coverage.lcov'
+          coverage.lcov
+
+          coverage.txt'
         retention-days: 7
     env:
       CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
