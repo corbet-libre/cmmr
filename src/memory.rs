@@ -114,6 +114,20 @@ impl<C: Clock> Store for Memory<C> {
             Ok(data.records.get(key).cloned())
         })
     }
+    async fn check_current(&self, batch: &[Check]) -> Result<(), Error> {
+        self.operate(|data, now| {
+            validate_checks(batch, self.limits, now)?;
+            data.prune(now);
+            for check in batch {
+                if !data.records.get(&check.key).is_some_and(|r| {
+                    r.revision == check.revision && r.deadline.unix_ms() >= check.deadline.unix_ms()
+                }) {
+                    return Err(Error::Conflict);
+                }
+            }
+            Ok(())
+        })
+    }
     async fn compare_exchange(&self, batch: &[Write]) -> Result<(), Error> {
         self.operate(|data, now| {
             validate_batch(batch, self.limits, now)?;

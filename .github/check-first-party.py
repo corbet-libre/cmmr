@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Require main declarations and one resolved revision per first-party crate."""
+import argparse
+import json
 import re
 import subprocess
 import sys
@@ -12,7 +14,7 @@ SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
 def check_lock(packages):
-    names = {p['name'] for p in packages if FIRST_PARTY.match(p.get('source', ''))}
+    names = {p['name'] for p in packages if FIRST_PARTY.match(p.get('source') or '')}
     for name in names:
         entries = [p for p in packages if p['name'] == name]
         if len(entries) != 1:
@@ -69,13 +71,32 @@ def self_test():
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--self-test', action='store_true')
+    parser.add_argument('--archive', action='store_true')
+    parser.add_argument('--metadata', type=Path)
+    args = parser.parse_args()
     self_test()
-    if '--self-test' not in sys.argv:
-        paths = subprocess.check_output(['git', 'ls-files', '-z'], text=True).split('\0')
+    if not args.self_test:
+        if args.archive:
+            paths = sorted(str(p) for name in ('Cargo.toml', 'Cargo.lock') for p in Path('.').rglob(name))
+            if not Path('Cargo.toml').is_file() or not Path('Cargo.lock').is_file():
+                raise ValueError('Missing archive root metadata')
+        else:
+            paths = subprocess.check_output(['git', 'ls-files', '-z'], text=True).split('\0')
         for name in paths:
             path = Path(name)
             if path.name == 'Cargo.toml':
                 check_manifest(tomllib.loads(path.read_text()))
             elif path.name == 'Cargo.lock':
                 check_lock(tomllib.loads(path.read_text())['package'])
+        if args.metadata is not None:
+            metadata = json.loads(args.metadata.read_text())['packages']
+            check_lock(metadata)
+            locked = tomllib.loads(Path('Cargo.lock').read_text())['package']
+            def sources(packages):
+                return sorted((p['name'], p['version'], p['source']) for p in packages
+                              if FIRST_PARTY.match(p.get('source') or ''))
+            if sources(metadata) != sources(locked):
+                raise ValueError('Resolved first-party metadata differs from the lock')
         print('First-party declarations follow main; locked crate revisions are unique')

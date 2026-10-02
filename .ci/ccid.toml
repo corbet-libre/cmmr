@@ -1,0 +1,30 @@
+schema = 1
+project = "cmmr"
+
+[checks.native]
+kind = "commands"
+commands = [["bash", "ci/native-check.sh"]]
+
+[checks.browser]
+kind = "commands"
+commands = [["bash", "ci/browser-check.sh"]]
+
+[checks.coverage]
+kind = "commands"
+commands = [["bash", "ci/coverage-check.sh"]]
+
+[checks.policy]
+kind = "commands"
+commands = [["bash", "ci/policy-check.sh"]]
+
+[checks.resolve]
+kind = "commands"
+commands = [["bash", "ci/resolve.sh"]]
+
+[checks.acceptance-preflight]
+kind = "commands"
+commands = [["bash", "ci/acceptance-preflight.sh"]]
+
+[checks.acceptance]
+kind = "commands"
+commands = [["bash", "ci/acceptance.sh"]]

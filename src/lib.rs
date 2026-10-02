@@ -207,6 +207,16 @@ impl fmt::Debug for Write {
     }
 }
 
+/// Exact records required to remain committed together at a read boundary.
+/// This checks currentness only; it grants no domain disclosure authority.
+#[derive(Clone, Debug)]
+pub struct Check {
+    pub key: String,
+    pub revision: Revision,
+    /// Exclusive authority deadline, no later than the observed record expiry.
+    pub deadline: Deadline,
+}
+
 /// Internal expiring continuation bound to the exact scope and index, not a
 /// snapshot or public token. Never expose its serde representation to clients;
 /// the API owner supplies an opaque requester/query-bound cursor.
@@ -271,6 +281,9 @@ pub enum State {
 pub trait Store: Send + Sync {
     fn state(&self) -> State;
     fn get(&self, key: &str) -> impl Future<Output = Result<Option<Record>, Error>> + Send;
+    /// Atomically check all revisions and exclusive deadlines without extending
+    /// retention or changing any record. Used immediately before disclosure.
+    fn check_current(&self, batch: &[Check]) -> impl Future<Output = Result<(), Error>> + Send;
     fn compare_exchange(&self, batch: &[Write]) -> impl Future<Output = Result<(), Error>> + Send;
     /// Delete only this generation. A delayed disconnect cannot delete a newer one.
     fn delete_generation(
@@ -292,6 +305,9 @@ impl<S: Store> Store for Arc<S> {
     }
     async fn get(&self, key: &str) -> Result<Option<Record>, Error> {
         self.as_ref().get(key).await
+    }
+    async fn check_current(&self, batch: &[Check]) -> Result<(), Error> {
+        self.as_ref().check_current(batch).await
     }
     async fn compare_exchange(&self, batch: &[Write]) -> Result<(), Error> {
         self.as_ref().compare_exchange(batch).await
@@ -337,6 +353,22 @@ pub fn validate_batch(batch: &[Write], limits: Limits, now: u64) -> Result<(), E
         write.record.validate(limits)?;
         write.record.deadline.check(now, limits)?;
         if write.expected == Some(write.record.revision) || !seen.insert(&write.record.key) {
+            return Err(Error::Invalid);
+        }
+    }
+    Ok(())
+}
+
+/// Apply the same bounded read preconditions in every backend.
+pub fn validate_checks(batch: &[Check], limits: Limits, now: u64) -> Result<(), Error> {
+    if batch.is_empty() || batch.len() > limits.batch {
+        return Err(Error::Invalid);
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for check in batch {
+        validate_name(&check.key)?;
+        check.deadline.check(now, limits)?;
+        if check.revision.0 == [0; 16] || !seen.insert(&check.key) {
             return Err(Error::Invalid);
         }
     }
