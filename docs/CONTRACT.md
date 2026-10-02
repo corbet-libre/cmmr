@@ -48,3 +48,5 @@ Valkey. It covers exact expiry, expired renewal, isolation, CAS, atomic rejectio
 index replacement/removal, generation fencing, paging, cursor binding/expiry,
 capacity, invalid writes, cancellation-before-poll and clock regression. Native
 contention tests and identical wasm vectors supplement it.
+
+`Store::check_current` atomically checks a bounded set of exact committed revisions and exclusive authority deadlines. It never renews a record, token or index. Missing, changed or expired entries refuse the whole read; Memory holds its existing mutex, and Valkey checks all conditions in one existing primary Lua invocation. The common real-backend conformance scenario exercises successful two-record reads, foreign scopes, mutations, missing rows, invalid bounds and exclusive expiry.

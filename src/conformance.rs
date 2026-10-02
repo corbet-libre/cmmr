@@ -132,9 +132,75 @@ pub async fn run<A: Store, B: Store>(a: &A, b: &B, clock: &TestClock) {
         a.page("visible", None, 3).await,
         Err(Error::Invalid)
     ));
+    // One atomic cut across both records, without refreshing a lease or token.
+    let checks = [
+        Check {
+            key: "a".into(),
+            revision: Revision([8; 16]),
+            deadline: Deadline::new(start + 1000).unwrap(),
+        },
+        Check {
+            key: "b".into(),
+            revision: Revision([9; 16]),
+            deadline: Deadline::new(start + 1000).unwrap(),
+        },
+    ];
+    a.check_current(&checks).await.unwrap();
+    assert_eq!(
+        a.get("a").await.unwrap().unwrap(),
+        write("a", "g", 8, start + 1000).record
+    );
+    assert_eq!(b.check_current(&checks).await, Err(Error::Conflict));
+    assert_eq!(a.check_current(&[]).await, Err(Error::Invalid));
+    assert_eq!(
+        a.check_current(&[checks[0].clone(), checks[0].clone()])
+            .await,
+        Err(Error::Invalid)
+    );
+    assert_eq!(
+        a.check_current(&vec![checks[0].clone(); 5]).await,
+        Err(Error::Invalid)
+    );
+    for check in [
+        Check {
+            key: "invalid/".into(),
+            ..checks[0].clone()
+        },
+        Check {
+            revision: Revision([0; 16]),
+            ..checks[0].clone()
+        },
+        Check {
+            deadline: Deadline::new(start + 60_001).unwrap(),
+            ..checks[0].clone()
+        },
+    ] {
+        assert_eq!(a.check_current(&[check]).await, Err(Error::Invalid));
+    }
+    for check in [
+        Check {
+            key: "missing".into(),
+            ..checks[0].clone()
+        },
+        Check {
+            revision: Revision([7; 16]),
+            ..checks[0].clone()
+        },
+        Check {
+            deadline: Deadline::new(start + 1001).unwrap(),
+            ..checks[0].clone()
+        },
+    ] {
+        assert_eq!(
+            a.check_current(&[checks[1].clone(), check]).await,
+            Err(Error::Conflict)
+        );
+    }
     clock.set(start + 999);
+    a.check_current(&checks).await.unwrap();
     assert!(a.get("a").await.unwrap().is_some());
     clock.set(start + 1000);
+    assert_eq!(a.check_current(&checks).await, Err(Error::Expired));
     assert_eq!(a.get("a").await.unwrap(), None);
     assert!(a.page("visible", None, 2).await.unwrap().records.is_empty());
     // A stale heartbeat cannot renew a dead generation.
@@ -159,4 +225,12 @@ pub async fn run<A: Store, B: Store>(a: &A, b: &B, clock: &TestClock) {
     a.close();
     assert_eq!(a.state(), State::Closed);
     assert_eq!(a.get("entry").await, Err(Error::Closed));
+    assert_eq!(
+        a.check_current(&[Check {
+            deadline: Deadline::new(start + 60_001).unwrap(),
+            ..checks[0].clone()
+        }])
+        .await,
+        Err(Error::Closed)
+    );
 }
