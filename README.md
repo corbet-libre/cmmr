@@ -20,7 +20,29 @@ CI runs native tests and the same storage vectors in WebAssembly. Enable the
 
 ## Scope
 
-Own the bounded process-local volatile Store, shared record/deadline/CAS/index/generation contract and adapter conformance vectors. No authentication, member policy, persistent storage, request logging or background I/O.
+### Purpose
+
+cmmr provides the volatile storage contract in memory for tests and small single-process setups.
+
+### Owns
+
+| Item | Detail |
+|---|---|
+| Storage port | The `Store` interface with its scope, limits, clock, record, revision, deadline, write, cursor, and page types |
+| Conformance suite | The single shared suite that every backend implementing the port must pass |
+| Memory backend | A real bounded in-memory implementation of the port |
+
+### Never
+
+cmmr is not a permissive mock, does not write files, does not extend deadlines beyond what was requested, and does not represent a shared multi-process store. It runs no background tasks and uses no implicit system clock.
+
+### States
+
+The store is either ready (empty or holding live entries) or closed. A failed store reports unavailable. Each entry is absent, live with a revision and an exclusive deadline, or expired and deleted. Writes that exceed capacity are refused, and closing leaves the store empty.
+
+### Test obligations
+
+The identical conformance vectors pass against the memory and Valkey backends, covering expiry boundaries, isolation, revisions, batch atomicity, bounded indexes, cancellation, capacity, cursor binding, and clock regression. A restart begins empty, and native and WebAssembly runs use identical vectors.
 
 ## Continuous verification
 
