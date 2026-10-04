@@ -216,3 +216,102 @@ fn expiry_reclaims_capacity_and_generation_fencing_holds() {
         );
     });
 }
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+fn pagination_skips_expired_moved_and_deleted_entries() {
+    futures::executor::block_on(async {
+        let start = 4_000_000_000_000;
+        let clock = TestClock::new(start);
+        let store = Memory::new(
+            Scope::new("page-exp", "boot").unwrap(),
+            limits(),
+            clock.clone(),
+        )
+        .unwrap();
+        // One shared deadline keeps (deadline, key) order on keys alone.
+        let q1 = write("q1", "g1", 71, start + 2000);
+        let q2 = write("q2", "g1", 72, start + 2000);
+        let q3 = write("q3", "g1", 73, start + 2000);
+        store
+            .compare_exchange(&[q1.clone(), q2.clone(), q3.clone()])
+            .await
+            .unwrap();
+        let first = store.page("visible", None, 2).await.unwrap();
+        assert_eq!(first.records, vec![q1.record.clone(), q2.record.clone()]);
+        let stale = first.next.clone().unwrap();
+        // The not-yet-paged record expires before its cursor is continued.
+        clock.set(start + 2000);
+        assert_eq!(store.get("q3").await.unwrap(), None);
+        let expired = store.page("visible", Some(&stale), 2).await.unwrap();
+        assert!(expired.records.is_empty());
+        assert!(expired.next.is_none());
+        // Fresh layout reuses the store after expiry pruned it.
+        let r1 = write("r1", "gone", 81, start + 20_000);
+        let r2 = write("r2", "gone", 82, start + 20_000);
+        let r3 = write("r3", "kept", 83, start + 20_000);
+        store
+            .compare_exchange(&[r1.clone(), r2.clone(), r3.clone()])
+            .await
+            .unwrap();
+        let head = store.page("visible", None, 2).await.unwrap();
+        assert_eq!(head.records, vec![r1.record.clone(), r2.record.clone()]);
+        let live = head.next.clone().unwrap();
+        // Generation deletion drops index rows; neither cursor resurrects them.
+        assert_eq!(store.delete_generation("gone").await.unwrap(), 2);
+        assert_eq!(store.get("r1").await.unwrap(), None);
+        assert_eq!(store.get("r2").await.unwrap(), None);
+        assert_eq!(store.get("r3").await.unwrap(), Some(r3.record.clone()));
+        assert_eq!(
+            store.page("visible", Some(&live), 2).await.unwrap().records,
+            vec![r3.record.clone()]
+        );
+        assert_eq!(
+            store
+                .page("visible", Some(&stale), 2)
+                .await
+                .unwrap()
+                .records,
+            vec![r3.record.clone()]
+        );
+        // Replacement moves the survivor to its new index only.
+        let mut moved = write("r3", "kept", 84, start + 25_000);
+        moved.expected = Some(Revision([83; 16]));
+        moved.record.indexes = vec!["fresh".into()];
+        moved.record.value = vec![84];
+        store.compare_exchange(&[moved.clone()]).await.unwrap();
+        assert_eq!(store.get("r3").await.unwrap(), Some(moved.record.clone()));
+        assert!(
+            store
+                .page("visible", None, 2)
+                .await
+                .unwrap()
+                .records
+                .is_empty()
+        );
+        assert!(
+            store
+                .page("visible", Some(&live), 2)
+                .await
+                .unwrap()
+                .records
+                .is_empty()
+        );
+        assert!(
+            store
+                .page("visible", Some(&stale), 2)
+                .await
+                .unwrap()
+                .records
+                .is_empty()
+        );
+        assert_eq!(
+            store.page("fresh", None, 2).await.unwrap().records,
+            vec![moved.record]
+        );
+        assert!(matches!(
+            store.page("fresh", Some(&live), 2).await,
+            Err(Error::Invalid)
+        ));
+    });
+}
