@@ -216,3 +216,73 @@ fn expiry_reclaims_capacity_and_generation_fencing_holds() {
         );
     });
 }
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+fn batch_expired_sibling_rejects_atomically_then_succeeds() {
+    futures::executor::block_on(async {
+        let start = 3_200_000_000_000;
+        let clock = TestClock::new(start);
+        let store = Memory::new(
+            Scope::new("batchexp", "boot").unwrap(),
+            limits(),
+            clock.clone(),
+        )
+        .unwrap();
+        let mut seed = write("live", "g1", 11, start + 5000);
+        seed.record.value = vec![11];
+        store
+            .compare_exchange(std::slice::from_ref(&seed))
+            .await
+            .unwrap();
+        let mut replacement = write("live", "g2", 21, start + 6000);
+        replacement.expected = Some(Revision([11; 16]));
+        replacement.record.value = vec![21];
+        replacement.record.indexes = vec!["fresh".into()];
+        let mut expired = write("sibling", "g2", 22, start);
+        expired.record.value = vec![22];
+        for batch in [
+            vec![replacement.clone(), expired.clone()],
+            vec![expired.clone(), replacement.clone()],
+        ] {
+            assert_eq!(store.compare_exchange(&batch).await, Err(Error::Expired));
+            assert_eq!(store.get("live").await.unwrap(), Some(seed.record.clone()));
+            assert_eq!(store.get("sibling").await.unwrap(), None);
+            assert_eq!(
+                store.page("visible", None, 2).await.unwrap().records,
+                vec![seed.record.clone()]
+            );
+            assert!(
+                store
+                    .page("fresh", None, 2)
+                    .await
+                    .unwrap()
+                    .records
+                    .is_empty()
+            );
+        }
+        assert_eq!(store.delete_generation("g2").await.unwrap(), 0);
+        let mut revived = expired.clone();
+        revived.record.deadline = Deadline::new(start + 6000).unwrap();
+        store
+            .compare_exchange(&[replacement.clone(), revived.clone()])
+            .await
+            .unwrap();
+        assert_eq!(
+            store.get("live").await.unwrap(),
+            Some(replacement.record.clone())
+        );
+        assert_eq!(
+            store.get("sibling").await.unwrap(),
+            Some(revived.record.clone())
+        );
+        assert_eq!(
+            store.page("visible", None, 2).await.unwrap().records,
+            vec![revived.record.clone()]
+        );
+        assert_eq!(
+            store.page("fresh", None, 2).await.unwrap().records,
+            vec![replacement.record.clone()]
+        );
+    });
+}
