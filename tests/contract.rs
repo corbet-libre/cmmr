@@ -167,6 +167,66 @@ fn full_capacity_replacements_stay_atomic_then_succeed() {
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 #[cfg_attr(not(target_arch = "wasm32"), test)]
+fn binary_values_survive_get_page_and_cas() {
+    futures::executor::block_on(async {
+        let start = 3_200_000_000_000;
+        let clock = TestClock::new(start);
+        let store = Memory::new(Scope::new("bin", "boot").unwrap(), limits(), clock).unwrap();
+        let all: Vec<u8> = (0u8..=255).collect();
+        assert_eq!(all.len(), 256);
+        assert!(all.len() <= limits().value_bytes);
+        assert!(all.contains(&0));
+        assert!(all.contains(&b'"'));
+        assert!(all.contains(&b'\\'));
+        assert!(std::str::from_utf8(&all).is_err());
+        let mut first = write("bin", "g", 71, start + 5000);
+        first.record.value = all.clone();
+        store
+            .compare_exchange(std::slice::from_ref(&first))
+            .await
+            .unwrap();
+        assert_eq!(store.get("bin").await.unwrap(), Some(first.record.clone()));
+        let head = store.page("visible", None, 1).await.unwrap();
+        assert_eq!(head.records, vec![first.record.clone()]);
+        let tail = store.page("visible", head.next.as_ref(), 1).await.unwrap();
+        assert!(tail.records.is_empty());
+        let mut snapshot = store.get("bin").await.unwrap().unwrap();
+        snapshot.value[0] ^= 0xff;
+        snapshot.value[1] = snapshot.value[1].wrapping_add(1);
+        assert_eq!(store.get("bin").await.unwrap(), Some(first.record.clone()));
+        assert_eq!(
+            store.page("visible", None, 2).await.unwrap().records,
+            vec![first.record.clone()]
+        );
+        let mut replacement = write("bin", "g", 72, start + 5000);
+        replacement.expected = Some(first.record.revision);
+        replacement.record.value = all.iter().rev().cloned().collect();
+        replacement.record.indexes = vec!["moved".into()];
+        store
+            .compare_exchange(std::slice::from_ref(&replacement))
+            .await
+            .unwrap();
+        assert_eq!(
+            store.get("bin").await.unwrap(),
+            Some(replacement.record.clone())
+        );
+        assert!(
+            store
+                .page("visible", None, 2)
+                .await
+                .unwrap()
+                .records
+                .is_empty()
+        );
+        assert_eq!(
+            store.page("moved", None, 2).await.unwrap().records,
+            vec![replacement.record]
+        );
+    });
+}
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
 fn expiry_reclaims_capacity_and_generation_fencing_holds() {
     futures::executor::block_on(async {
         let start = 3_100_000_000_000;
