@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
+export CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-always}"
+
+python3 .github/check-first-party.py
+rustc --version
+cargo metadata --locked --all-features --format-version 1 > dependency-metadata.json
+python3 .github/check-first-party.py
+cargo fmt --all
+git diff --exit-code -- '*.rs' > format.patch
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-features
+cargo check --locked --target wasm32-unknown-unknown
+
+version=$(jq -r '.packages[] | select(.name == "wasm-bindgen") | .version' dependency-metadata.json)
+archive="wasm-bindgen-${version}-x86_64-unknown-linux-musl.tar.gz"
+base="https://github.com/wasm-bindgen/wasm-bindgen/releases/download/${version}"
+runner_tmp="${RUNNER_TEMP:-/tmp}/wasm-runner"
+mkdir -p "$runner_tmp"
+cd "$runner_tmp"
+curl -A 'ci-artifact-fetch/1.0' --fail --location --retry 3 --remote-name "$base/$archive"
+curl -A 'ci-artifact-fetch/1.0' --fail --location --retry 3 --remote-name "$base/$archive.sha256sum"
+checksum=$(cut -d ' ' -f1 "$archive.sha256sum")
+printf '%s  %s\n' "$checksum" "$archive" | sha256sum --check
+tar -xzf "$archive" --strip-components=1
+export PATH="$PWD:$PATH"
+cd "$OLDPWD"
+export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner
+cargo test --locked --target wasm32-unknown-unknown --features conformance --test contract --test validation
+
+rustup run nightly rustc --version
+NIGHTLY_RUSTC="$(rustup which --toolchain nightly rustc)"
+NIGHTLY_CARGO="$(rustup which --toolchain nightly cargo)"
+NIGHTLY_BIN="$(dirname "$NIGHTLY_RUSTC")"
+export RUSTC="$NIGHTLY_RUSTC"
+export CARGO="$NIGHTLY_CARGO"
+export PATH="$NIGHTLY_BIN:$PATH"
+export RUSTUP_TOOLCHAIN=nightly
+"$NIGHTLY_CARGO" llvm-cov --version
+"$NIGHTLY_CARGO" llvm-cov --locked --workspace --all-features --branch --no-cfg-coverage --no-cfg-coverage-nightly --ignore-filename-regex '/tests/' --json --output-path coverage.json
+"$NIGHTLY_CARGO" llvm-cov report --locked --branch --ignore-filename-regex '/tests/' --lcov --output-path coverage.lcov
+"$NIGHTLY_CARGO" llvm-cov report --locked --branch --ignore-filename-regex '/tests/' --text > coverage.txt
+python3 .github/check-coverage.py coverage.lcov coverage.json coverage.txt
