@@ -181,11 +181,7 @@ jobs:
     env:
       CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
 'on':
-  push:
-    branches:
-    - main
-  pull_request: null
-  workflow_dispatch: null
+  workflow_dispatch:
 env:
   CARGO_BUILD_JOBS: 2
   CARGO_TERM_COLOR: always
