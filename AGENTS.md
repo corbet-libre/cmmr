@@ -18,16 +18,16 @@ Land: `cargo fmt` in touched repos, rebase on main (never force-push),
 Invariants (rule -> enforcing test):
 - CAS compares all expected revisions before publishing anything;
   expired records are absent, so a stale heartbeat conflicts
-  -> `tests/contract.rs::revision_race_has_one_winner`, `::storage_contract`
+  -> `tests/it/contract.rs::revision_race_has_one_winner`, `::storage_contract`
 - Full-capacity replacements stay atomic; expiry reclaims capacity;
   generation fencing holds
   -> `::full_capacity_replacements_stay_atomic_then_succeed`,
   `::expiry_reclaims_capacity_and_generation_fencing_holds`
 - Invalid batches never change live records or indexes
-  -> `tests/validation.rs::invalid_batches_never_change_live_records_or_indexes`
+  -> `tests/it/validation.rs::invalid_batches_never_change_live_records_or_indexes`
 - `check_current` atomically checks exact revisions and exclusive deadlines
   and never renews anything; foreign, mutated or expired entries refuse
-  -> `src/conformance.rs::run` via `tests/contract.rs::storage_contract`
+  -> `src/conformance.rs::run` via `tests/it/contract.rs::storage_contract`
 - Bounds, serialization, cursors and deadlines are checked before paging
   -> `::bounds_and_serialization_refuse_invalid_storage_inputs`,
   `::cursor_encoding_and_deadlines_are_checked_before_paging`

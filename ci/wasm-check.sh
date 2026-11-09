@@ -7,4 +7,4 @@ export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner
 export WASM_BINDGEN_USE_BROWSER=1 WASM_BINDGEN_TEST_ONLY_WEB=1
 export WASM_BINDGEN_TEST_TIMEOUT=120
 cargo check --locked --target wasm32-unknown-unknown
-cargo test --locked --target wasm32-unknown-unknown --features conformance --test contract --test validation
+cargo test --locked --target wasm32-unknown-unknown --features conformance --test it
