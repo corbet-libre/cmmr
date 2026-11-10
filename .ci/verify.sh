@@ -5,7 +5,6 @@ export CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-always}"
 
 python3 .github/check-first-party.py
 rustc --version
-bash .ci/update-our-crates.sh
 cargo metadata --locked --all-features --format-version 1 > dependency-metadata.json
 python3 .github/check-first-party.py
 cargo fmt --all
